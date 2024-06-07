@@ -322,21 +322,26 @@ copyuvm(pde_t *pgdir, uint sz)
 
   if((d = setupkvm()) == 0)
     return 0;
-  for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
+  for(i = 0; i < sz; i += PGSIZE){ // each page in the parent's address space is considered
+    if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0) // finds the page table entry for the current address i
       panic("copyuvm: pte should exist");
     if(!(*pte & PTE_P))
       panic("copyuvm: page not present");
+
     pa = PTE_ADDR(*pte);
-    flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto bad;
-    memmove(mem, (char*)P2V(pa), PGSIZE);
-    if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0) {
-      kfree(mem);
+    flags = PTE_FLAGS(*pte) & ~PTE_W; // remove the writable permission from the flag
+    // need to handle T_PGFLT exception in handling code
+
+    // delete codes that allocate a new page of physical memory(kalloc)
+    // and that copies the content form the old page to the newly allocated page(memmove)
+
+    if(mappages(d, (void*)i, PGSIZE, pa, flags) < 0) {
       goto bad;
     }
+    incr_refc(pa); // increment the number of reference of the page by 1
   }
+
+  lcr3(V2P(pgdir)); // TLB flush
   return d;
 
 bad:
@@ -383,6 +388,47 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
     va = va0 + PGSIZE;
   }
   return 0;
+}
+
+// Project 4
+void CoW_handler(void)
+{
+  pte_t *pte;
+  uint pa;
+  uint refcnt;
+  uint fault_addr = rcr2(); // read the CR2 register to get the faulting address
+
+  if (myproc() == 0) {
+    panic("no current process");
+  }
+
+  // walk the page table to find the page table entry for the faulting address
+  pte = walkpgdir(myproc()->pgdir, (void *)fault_addr, 0);
+  if (pte == 0 || !(*pte & PTE_P)) { 
+    // null check & check whether the page present bit is set in the page table entry pointed to by pte
+    cprintf("error: page not found or valid\n");
+    myproc()->killed = 1; // prevent the propagation of error
+    return;
+  } 
+
+  if(!(*pte & PTE_W) && (myproc()->tf->err & 0x2)) { // if tries to write on a read-only page
+    pa = PTE_ADDR(*pte); // extract the physical adress from pte (ignore the flag bits)
+    refcnt = get_refc(pa); // return the number of references to the given page
+    if(refcnt > 1) { // if more than 1 process are sharing a single page
+      char *mem;
+      if((mem = kalloc()) == 0) {
+        cprintf("error: out of memory\n");
+        myproc()->killed = 1;
+        return;
+      }
+      memmove(mem, (char*)P2V(pa), PGSIZE); // copy data from pa to mem
+      *pte = V2P(mem) | PTE_FLAGS(*pte) | PTE_W; // preserves existing flags, modifying only the physical address and writability
+      decr_refc(pa); // decrement the reference count by 1
+    } else if(refcnt == 1) {
+      *pte += PTE_W; // just enable writeable flag, no additional copy
+    }
+  }
+  lcr3(V2P(myproc()->pgdir)); // Flush TLB
 }
 
 //PAGEBREAK!

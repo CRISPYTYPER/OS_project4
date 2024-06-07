@@ -68,6 +68,10 @@ char*           kalloc(void);
 void            kfree(char*);
 void            kinit1(void*, void*);
 void            kinit2(void*, void*);
+// project 4
+void            incr_refc(uint pa);
+void            decr_refc(uint pa);
+int             get_refc(uint pa);
 
 // kbd.c
 void            kbdintr(void);
@@ -185,6 +189,8 @@ void            switchuvm(struct proc*);
 void            switchkvm(void);
 int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
+// Project 4
+void            CoW_handler(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
