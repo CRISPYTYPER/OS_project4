@@ -431,6 +431,75 @@ void CoW_handler(void)
   lcr3(V2P(myproc()->pgdir)); // Flush TLB
 }
 
+int countvp(void)
+{
+  struct proc *curproc = myproc();
+  if (curproc == 0)
+    return -1;
+
+  int logical_pages = curproc->sz / PGSIZE;
+
+  return logical_pages;
+}
+
+int countpp(void)
+{
+  struct proc *curproc = myproc();
+  pde_t *pgdir;
+  pde_t *pte;
+  uint count = 0;
+  uint va = 0;
+
+  if (curproc == 0)
+    return -1;
+
+  pgdir = curproc->pgdir;
+
+  while (va < KERNBASE) { // ensuring only user space is considered
+    pte = walkpgdir(pgdir, (void *)va, 0); // retrieve the corresponding page table entry
+    if(pte && (*pte & PTE_P)) { // check whether pte exists and valid
+      count++;
+    }
+    va += PGSIZE;
+  }
+  return count;
+}
+
+int countptp(void) 
+{
+  struct proc *curproc = myproc();
+  pde_t *pgdir;
+  pde_t *pde;
+  pde_t *pgtab;
+  uint pde_idx, pte_idx;
+  uint count = 0;
+
+  if (curproc == 0)
+    return -1;
+
+  pgdir = curproc->pgdir;
+  
+  count++; // count the page directory itself
+
+  // Traverse the page directory
+  for (pde_idx = 0; pde_idx < NPDENTRIES; pde_idx++) {
+      pde = &pgdir[pde_idx];
+      if (*pde & PTE_P) { // this page directory entry is present
+          count++; // count this pde
+          pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
+
+          // Traverse the page table
+          for (pte_idx = 0; pte_idx < NPTENTRIES; pte_idx++) {
+              if (pgtab[pte_idx] & PTE_P) {
+                  count++;
+              }
+          }
+      }
+  }
+
+  return count;
+}
+
 //PAGEBREAK!
 // Blank page.
 //PAGEBREAK!

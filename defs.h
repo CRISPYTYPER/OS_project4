@@ -72,6 +72,11 @@ void            kinit2(void*, void*);
 void            incr_refc(uint pa);
 void            decr_refc(uint pa);
 int             get_refc(uint pa);
+void            CoW_handler(void);
+int             countfp(void);
+int             countvp(void);
+int             countpp(void);
+int             countptp(void);
 
 // kbd.c
 void            kbdintr(void);
