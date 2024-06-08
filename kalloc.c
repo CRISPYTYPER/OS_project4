@@ -62,9 +62,11 @@ freerange(void *vstart, void *vend)
   uint pa; // physical address
   p = (char*)PGROUNDUP((uint)vstart);
   for(; p + PGSIZE <= (char*)vend; p += PGSIZE)
+  {
     pa = V2P(p);
     pgrefcnt[pa / PGSIZE] = 0; // initialize page ref count to 0
     kfree(p);
+  }
 }
 //PAGEBREAK: 21
 // Free the page of physical memory pointed at by v,
@@ -86,14 +88,14 @@ kfree(char *v)
 
   if(get_refc(pa) >= 1) { // first, just decrement the number of ref count
     decr_refc(pa);
-    if(get_refc(pa) == 0) { // free the page if ref count is 0
-      // Fill with junk to catch dangling refs.
-      memset(v, 1, PGSIZE);
-      r = (struct run*)v;
-      r->next = kmem.freelist;
-      kmem.freelist = r;
-      freepagecnt++;
-    }
+  }
+  if(get_refc(pa) == 0) { // free the page if ref count is 0
+    // Fill with junk to catch dangling refs.
+    memset(v, 1, PGSIZE);
+    r = (struct run*)v;
+    r->next = kmem.freelist;
+    kmem.freelist = r;
+    freepagecnt++;
   }
   if(kmem.use_lock)
     release(&kmem.lock);
@@ -125,23 +127,17 @@ kalloc(void)
 
 void incr_refc(uint pa)
 {
-  acquire(&pgrefcnt_lock); 
   pgrefcnt[pa / PGSIZE]++;
-  release(&pgrefcnt_lock); 
 }
 
 void decr_refc(uint pa)
 {
-  acquire(&pgrefcnt_lock); 
   pgrefcnt[pa / PGSIZE]--;
-  release(&pgrefcnt_lock); 
 }
 
 int get_refc(uint pa)
 {
-  acquire(&pgrefcnt_lock); 
   int refcnt = (int)pgrefcnt[pa / PGSIZE];
-  release(&pgrefcnt_lock); 
   return refcnt;
 }
 

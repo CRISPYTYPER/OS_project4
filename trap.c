@@ -47,6 +47,11 @@ trap(struct trapframe *tf)
   }
 
   switch(tf->trapno){
+    // project 4
+  case T_PGFLT:
+    // Handler for page fault
+    CoW_handler();
+    break;
   case T_IRQ0 + IRQ_TIMER:
     if(cpuid() == 0){
       acquire(&tickslock);
@@ -77,10 +82,6 @@ trap(struct trapframe *tf)
             cpuid(), tf->cs, tf->eip);
     lapiceoi();
     break;
-  // project 4
-  case T_PGFLT:
-    // Handler for page fault
-    CoW_handler();
   //PAGEBREAK: 13
   default:
     if(myproc() == 0 || (tf->cs&3) == 0){

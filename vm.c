@@ -318,7 +318,6 @@ copyuvm(pde_t *pgdir, uint sz)
   pde_t *d;
   pte_t *pte;
   uint pa, i, flags;
-  char *mem;
 
   if((d = setupkvm()) == 0)
     return 0;
@@ -328,9 +327,9 @@ copyuvm(pde_t *pgdir, uint sz)
     if(!(*pte & PTE_P))
       panic("copyuvm: page not present");
 
+    *pte &= (~PTE_W); // disable writable flag
     pa = PTE_ADDR(*pte);
-    flags = PTE_FLAGS(*pte) & ~PTE_W; // remove the writable permission from the flag
-    // need to handle T_PGFLT exception in handling code
+    flags = PTE_FLAGS(*pte);
 
     // delete codes that allocate a new page of physical memory(kalloc)
     // and that copies the content form the old page to the newly allocated page(memmove)
