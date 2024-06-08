@@ -6,12 +6,17 @@
 #include "mmu.h"
 #include "proc.h"
 #include "elf.h"
+#include "spinlock.h"
 
 extern char data[];  // defined by kernel.ld
 pde_t *kpgdir;  // for use in scheduler()
 
 // Set up CPU's kernel segment descriptors.
 // Run once on entry on each CPU.
+
+// For project 4
+struct spinlock pgrefcnt_lock;
+
 void
 seginit(void)
 {
@@ -27,6 +32,9 @@ seginit(void)
   c->gdt[SEG_UCODE] = SEG(STA_X|STA_R, 0, 0xffffffff, DPL_USER);
   c->gdt[SEG_UDATA] = SEG(STA_W, 0, 0xffffffff, DPL_USER);
   lgdt(c->gdt, sizeof(c->gdt));
+
+  // Project 4
+  initlock(&pgrefcnt_lock, "pgrefcnt");
 }
 
 // Return the address of the PTE in page table pgdir
@@ -337,7 +345,9 @@ copyuvm(pde_t *pgdir, uint sz)
     if(mappages(d, (void*)i, PGSIZE, pa, flags) < 0) {
       goto bad;
     }
+    acquire(&pgrefcnt_lock);
     incr_refc(pa); // increment the number of reference of the page by 1
+    release(&pgrefcnt_lock);
   }
 
   lcr3(V2P(pgdir)); // TLB flush
@@ -412,7 +422,9 @@ void CoW_handler(void)
 
   if(!(*pte & PTE_W) && (myproc()->tf->err & 0x2)) { // if tries to write on a read-only page
     pa = PTE_ADDR(*pte); // extract the physical adress from pte (ignore the flag bits)
+    acquire(&pgrefcnt_lock);
     refcnt = get_refc(pa); // return the number of references to the given page
+    release(&pgrefcnt_lock);
     if(refcnt > 1) { // if more than 1 process are sharing a single page
       char *mem;
       if((mem = kalloc()) == 0) {
@@ -422,7 +434,9 @@ void CoW_handler(void)
       }
       memmove(mem, (char*)P2V(pa), PGSIZE); // copy data from pa to mem
       *pte = V2P(mem) | PTE_FLAGS(*pte) | PTE_W; // preserves existing flags, modifying only the physical address and writability
+      acquire(&pgrefcnt_lock);
       decr_refc(pa); // decrement the reference count by 1
+      release(&pgrefcnt_lock);
     } else if(refcnt == 1) {
       *pte += PTE_W; // just enable writeable flag, no additional copy
     }

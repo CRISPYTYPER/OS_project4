@@ -13,12 +13,6 @@ void freerange(void *vstart, void *vend);
 extern char end[]; // first address after kernel loaded from ELF file
                    // defined by the kernel linker script in kernel.ld
 
-// Project 4
-// array for counting the numbers of references for each physical page
-uint pgrefcnt[PHYSTOP / PGSIZE]; // PHYSTOP is the top of the physical memory that xv6 OS uses
-uint freepagecnt; // Count the number of total free pages in the system
-
-struct spinlock pgrefcnt_lock; // define a spinlock for pgrefcnt array
 
 struct run {
   struct run *next;
@@ -28,6 +22,9 @@ struct {
   struct spinlock lock;
   int use_lock;
   struct run *freelist;
+  uint freepagecnt; // Count the number of total free pages in the system
+  // array for counting the numbers of references for each physical page
+  uint pgrefcnt[PHYSTOP / PGSIZE]; // PHYSTOP is the top of the physical memory that xv6 OS uses
 } kmem;
 
 // Initialization happens in two phases.
@@ -39,9 +36,8 @@ void
 kinit1(void *vstart, void *vend)
 {
   initlock(&kmem.lock, "kmem");
-  // Project 4
-  initlock(&pgrefcnt_lock, "refcnt"); // initialize for page reference counts
   kmem.use_lock = 0;
+  kmem.freepagecnt = 0;
   freerange(vstart, vend);
 }
 
@@ -51,7 +47,7 @@ kinit2(void *vstart, void *vend)
   freerange(vstart, vend);
   // Project 4
   // memory allocated during kinit1 includes areas such as text, data, and BSS segments
-  freepagecnt = ((char *)vend - (char *)vstart) / PGSIZE; // initialize the number of free physical pages
+  kmem.freepagecnt = ((char *)vend - (char *)vstart) / PGSIZE; // initialize the number of free physical pages
   kmem.use_lock = 1;
 }
 
@@ -64,7 +60,7 @@ freerange(void *vstart, void *vend)
   for(; p + PGSIZE <= (char*)vend; p += PGSIZE)
   {
     pa = V2P(p);
-    pgrefcnt[pa / PGSIZE] = 0; // initialize page ref count to 0
+    kmem.pgrefcnt[pa / PGSIZE] = 0; // initialize page ref count to 0
     kfree(p);
   }
 }
@@ -95,7 +91,7 @@ kfree(char *v)
     r = (struct run*)v;
     r->next = kmem.freelist;
     kmem.freelist = r;
-    freepagecnt++;
+    kmem.freepagecnt++;
   }
   if(kmem.use_lock)
     release(&kmem.lock);
@@ -115,9 +111,9 @@ kalloc(void)
   r = kmem.freelist;
   if(r) {
     kmem.freelist = r->next;
-    pgrefcnt[V2P((char*)r) / PGSIZE]++;
+    incr_refc(V2P((char*)r)); // increase from 0 to 1
   }
-  freepagecnt--;
+  kmem.freepagecnt--;
   if(kmem.use_lock)
     release(&kmem.lock);
   return (char*)r;
@@ -127,30 +123,26 @@ kalloc(void)
 
 void incr_refc(uint pa)
 {
-  pgrefcnt[pa / PGSIZE]++;
+  kmem.pgrefcnt[pa / PGSIZE]++;
 }
 
 void decr_refc(uint pa)
 {
-  pgrefcnt[pa / PGSIZE]--;
+  kmem.pgrefcnt[pa / PGSIZE]--;
 }
 
 int get_refc(uint pa)
 {
-  int refcnt = (int)pgrefcnt[pa / PGSIZE];
+  int refcnt = (int)kmem.pgrefcnt[pa / PGSIZE];
   return refcnt;
 }
 
 int countfp(void)
 {
   int freepages;
-  if(kmem.use_lock)
-    acquire(&kmem.lock);
-
-  freepages = (int)freepagecnt;
-
-  if(kmem.use_lock)
-    release(&kmem.lock);
+  acquire(&kmem.lock);
+  freepages = (int)kmem.freepagecnt;
+  release(&kmem.lock);
     
   return freepages;
 }
