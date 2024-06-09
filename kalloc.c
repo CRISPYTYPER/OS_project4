@@ -109,8 +109,8 @@ kalloc(void)
   if(r) {
     kmem.freelist = r->next;
     incr_refc(V2P((char*)r)); // increase from 0 to 1
+    kmem.freepagecnt--;
   }
-  kmem.freepagecnt--;
   if(kmem.use_lock)
     release(&kmem.lock);
   return (char*)r;
