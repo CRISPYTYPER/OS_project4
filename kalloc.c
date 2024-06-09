@@ -37,7 +37,7 @@ kinit1(void *vstart, void *vend)
 {
   initlock(&kmem.lock, "kmem");
   kmem.use_lock = 0;
-  kmem.freepagecnt = 0;
+  kmem.freepagecnt = 0; // initialize the number of free physical pages
   freerange(vstart, vend);
 }
 
@@ -45,9 +45,6 @@ void
 kinit2(void *vstart, void *vend)
 {
   freerange(vstart, vend);
-  // Project 4
-  // memory allocated during kinit1 includes areas such as text, data, and BSS segments
-  kmem.freepagecnt = ((char *)vend - (char *)vstart) / PGSIZE; // initialize the number of free physical pages
   kmem.use_lock = 1;
 }
 
@@ -134,6 +131,7 @@ void decr_refc(uint pa)
 int get_refc(uint pa)
 {
   int refcnt = (int)kmem.pgrefcnt[pa / PGSIZE];
+  
   return refcnt;
 }
 
